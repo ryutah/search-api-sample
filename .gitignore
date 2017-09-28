@@ -65,3 +65,4 @@ Temporary Items
 
 .envrc
 pkg/
+vendor/

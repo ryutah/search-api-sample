@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/context"
+
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/log"
@@ -16,13 +18,16 @@ import (
 )
 
 type User struct {
-	Name      string
-	Comment   string
-	Visits    float64
-	LastVisit time.Time
-	Birthday  time.Time
-	Mail      []string
-	UserID    int64
+	ID        int64     `datastore:"-" json:"id"`
+	Name      string    `json:"name"`
+	Comment   string    `json:"comment"`
+	Visits    float64   `json:"visits"`
+	LastVisit time.Time `json:"lastVisit"`
+	Birthday  time.Time `json:"birthday"`
+	Mail      []string  `json:"mail"`
+	UserID    int64     `json:"userId"`
+	Field1    string    `json:"field1"`
+	Field2    string    `json:"field2"`
 }
 
 type UserIndex struct {
@@ -34,6 +39,8 @@ type UserIndex struct {
 	Birthday  time.Time
 	Mail      string
 	UserID    string
+	Field1    search.Atom `search:"Search"`
+	Field2    search.Atom `search:"Search"`
 }
 
 func PutSamples(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +62,8 @@ func PutSamples(w http.ResponseWriter, r *http.Request) {
 			Birthday:  time.Date(1990, time.January, rand.Intn(29), 0, 0, 0, 0, time.UTC),
 			Mail:      mails[i%3],
 			UserID:    int64(i + 1),
+			Field1:    fmt.Sprintf("HOGE%v", i+1),
+			Field2:    fmt.Sprintf("FUGA%v", i+1),
 		}
 		newKey, err := datastore.Put(ctx, key, &usr)
 		if err != nil {
@@ -79,6 +88,8 @@ func PutSamples(w http.ResponseWriter, r *http.Request) {
 			Birthday:  usr.Birthday,
 			Mail:      strings.Join(usr.Mail, " "),
 			UserID:    fmt.Sprint(usr.UserID),
+			Field1:    search.Atom(usr.Field1),
+			Field2:    search.Atom(usr.Field2),
 		}
 		id := fmt.Sprint(key.IntID())
 		if _, err := index.Put(ctx, id, usrIndex); err != nil {
@@ -164,5 +175,55 @@ func Search(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf8")
 	if err := json.NewEncoder(w).Encode(rslt); err != nil {
 		http.Error(w, err.Error(), 500)
+	}
+}
+
+func PostUser(w http.ResponseWriter, r *http.Request) {
+	ctx := appengine.NewContext(r)
+
+	payload := new(User)
+	if err := json.NewDecoder(r.Body).Decode(payload); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	var id string
+	err := datastore.RunInTransaction(ctx, func(tc context.Context) error {
+		key := datastore.NewIncompleteKey(tc, "User", nil)
+		newKey, err := datastore.Put(tc, key, payload)
+		if err != nil {
+			return err
+		}
+		id = fmt.Sprint(newKey.IntID())
+
+		usrIndex := &UserIndex{
+			Name:      payload.Name,
+			Comment:   search.HTML(payload.Comment),
+			Visits:    payload.Visits,
+			LastVisit: payload.LastVisit,
+			Birthday:  payload.Birthday,
+			Mail:      strings.Join(payload.Mail, " "),
+			UserID:    fmt.Sprint(payload.UserID),
+			Field1:    search.Atom(payload.Field1),
+			Field2:    search.Atom(payload.Field2),
+		}
+
+		index, err := search.Open("users")
+		if err != nil {
+			return err
+		}
+		_, err = index.Put(tc, id, usrIndex)
+		return err
+	}, nil)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf8")
+	result := map[string]string{"id": id}
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
 	}
 }
