@@ -28,6 +28,7 @@ type User struct {
 	UserID    int64     `json:"userId"`
 	Field1    string    `json:"field1"`
 	Field2    string    `json:"field2"`
+	Category  string    `json:"category"`
 }
 
 type UserIndex struct {
@@ -41,6 +42,7 @@ type UserIndex struct {
 	UserID    string
 	Field1    search.Atom `search:"Search"`
 	Field2    search.Atom `search:"Search"`
+	Category  string      `search: ",facet"`
 }
 
 func PutSamples(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +52,7 @@ func PutSamples(w http.ResponseWriter, r *http.Request) {
 		{"mail2@sample.com", "mail3@sample.com"},
 		{"mail4@sample.com", "mail5@sample.com"},
 	}
+	categories := []string{"A", "B", "C", "D"}
 
 	users := make(map[*datastore.Key]User)
 	for i := 0; i < 500; i++ {
@@ -64,6 +67,7 @@ func PutSamples(w http.ResponseWriter, r *http.Request) {
 			UserID:    int64(i + 1),
 			Field1:    fmt.Sprintf("HOGE%v", i+1),
 			Field2:    fmt.Sprintf("FUGA%v", i+1),
+			Category:  categories[i%4],
 		}
 		newKey, err := datastore.Put(ctx, key, &usr)
 		if err != nil {
@@ -90,6 +94,7 @@ func PutSamples(w http.ResponseWriter, r *http.Request) {
 			UserID:    fmt.Sprint(usr.UserID),
 			Field1:    search.Atom(usr.Field1),
 			Field2:    search.Atom(usr.Field2),
+			Category:  usr.Category,
 		}
 		id := fmt.Sprint(key.IntID())
 		if _, err := index.Put(ctx, id, usrIndex); err != nil {
@@ -151,6 +156,7 @@ func Search(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, i)
 	}
 
+	log.Infof(ctx, "Count : %v", ite.Count())
 	var keys []*datastore.Key
 	for _, id := range ids {
 		key := datastore.NewKey(ctx, "User", "", id, nil)
